@@ -1,2 +1,1 @@
-# tracker
-Tracks time on active windows and other productivity stats.
+Productivity tracker. Tracks programs and polls for productivity.
