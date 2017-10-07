@@ -10,10 +10,10 @@ import sys
 from os.path import join
 from threading import Thread
 
-productivity_interval = 1
-interval = 5
+productivity_interval = 60*5
+interval = 60*60
 base = './'
-filename = 'data.txt'
+filename = '/home/tim/data.txt'
 
 keys = [0,1,2,3,4,5]
 codes = [48, 49, 50, 51, 52, 53]
@@ -33,9 +33,8 @@ key2code[3] = 51
 key2code[4] = 52
 key2code[5] = 53
 
-
 width = 1920
-offsets = [250, 250, 1000]
+offsets = [250, 250, 750]
 displays = 3
 
 class KeyEvent:
@@ -69,7 +68,6 @@ def handle_key_event():
     productivity = code2key[KeyEvent.key1]
     KeyEvent.key1 = None
     KeyEvent.key2 = None
-    print(productivity)
     return productivity
 
 
@@ -135,9 +133,8 @@ class Tracker(Thread):
         self.daemon = True
         self.poll_interval = poll_interval
         self.aggregated_data = {}
-        self.current_minute = datetime.datetime.now().minute
-        self.last_productivity_prompt = self.current_minute-1
-        print(datetime.datetime.now().minute)
+        self.current_time = datetime.datetime.now()
+        self.last_productivity_prompt = datetime.datetime.now()
         self.productivity = []
         self.computed_productivity = False
 
@@ -146,43 +143,54 @@ class Tracker(Thread):
             if self.computed_productivity:
                 time.sleep(1)
                 self.computed_productivity = False
-                print('end productivity')
                 continue
-            current_minute = datetime.datetime.now().minute
-            if current_minute % productivity_interval == 0:
-                if self.last_productivity_prompt != current_minute:
-                    productivity = handle_key_event()
-                    self.productivity.append((datetime.datetime.now(), productivity))
-                    self.last_productivity_prompt = current_minute
-                    self.computed_productivity = True
-                    print('productivity')
-                    continue
-            if self.current_minute + interval <= current_minute:
-                self.print_stats(True)
-                self.current_minute = datetime.datetime.now().minute
 
-            name = bashmagic.get_active_window_name().strip()
+            current_time = datetime.datetime.now()
+            if (current_time - self.last_productivity_prompt).seconds > productivity_interval:
+                productivity = handle_key_event()
+                self.productivity.append((datetime.datetime.now(), productivity))
+                self.last_productivity_prompt = current_time
+                self.computed_productivity = True
+                continue
+
+            if (current_time - self.current_time).seconds > interval:
+                self.print_stats(True)
+                self.current_time = datetime.datetime.now()
+
+            name = bashmagic.get_active_window_name()
+            if name is None: continue
+            name = name.strip()
             path = bashmagic.get_active_window_path()
             if path not in self.aggregated_data: self.aggregated_data[path] = {}
             if name not in self.aggregated_data[path]: self.aggregated_data[path][name] = 0
 
-            self.aggregated_data[path][name] += 1
+            self.aggregated_data[path][name] += self.poll_interval
             time.sleep(self.poll_interval)
 
+
     def print_stats(self, save=False):
+        print('stats')
         data = []
         data.append('='*75)
+        data.append(str(datetime.datetime.now()))
         for path in self.aggregated_data:
-            data.append('{0}:\n'.format(path))
+            aggregated_duration = 0
             for name, duration in self.aggregated_data[path].items():
-                m, s = divmod(duration, 60)
-                h, m = divmod(m, 60)
-                data.append('{0}\t{1:02d}:{2:02d}:{3:02d}'.format(name, h, m, s))
+                aggregated_duration += duration
+
+            m, s = divmod(aggregated_duration, 60)
+            h, m = divmod(m, 60)
+            data.append('{0}\t{1:02d}:{2:02d}:{3:02d}'.format(path, h, m, s))
+
             data.append('')
         data.append('='*75)
 
         for line in data:
             print(line)
+
+        for dt, prod in self.productivity:
+            print(prod)
+
 
         if save:
             print('')
@@ -207,11 +215,6 @@ class Tracker(Thread):
 
 
 
-t = Tracker()
+t = Tracker(1)
 t.start()
-
-while True:
-    t.print_stats()
-    time.sleep(10)
-
-
+t.join()
